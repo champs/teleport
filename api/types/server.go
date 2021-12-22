@@ -291,15 +291,7 @@ func (s *ServerV2) SetKubernetesClusters(clusters []*KubernetesCluster) {
 //
 // Any server matches against an empty label set
 func (s *ServerV2) MatchAgainst(labels map[string]string) bool {
-	if labels != nil {
-		myLabels := s.GetAllLabels()
-		for key, value := range labels {
-			if myLabels[key] != value {
-				return false
-			}
-		}
-	}
-	return true
+	return s.GetMetadata().MatchLabels(labels)
 }
 
 // LabelsString returns a comma separated string of all labels.

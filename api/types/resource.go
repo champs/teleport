@@ -254,6 +254,17 @@ func (m *Metadata) CheckAndSetDefaults() error {
 	return nil
 }
 
+// MatchLabels takes a map of labels and returns `true` if it has ALL of them.
+func (m Metadata) MatchLabels(labels map[string]string) bool {
+	for key, value := range labels {
+		if m.Labels[key] != value {
+			return false
+		}
+	}
+
+	return true
+}
+
 // LabelPattern is a regexp that describes a valid label key
 const LabelPattern = `^[a-zA-Z/.0-9_*-]+$`
 

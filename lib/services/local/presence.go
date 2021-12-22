@@ -1498,6 +1498,12 @@ func (s *PresenceService) ListResources(ctx context.Context, req proto.ListResou
 	case types.KindAppServer:
 		keyPrefix = []string{appServersPrefix, req.Namespace}
 		unmarshalItemFunc = backendItemToApplicationServer
+	case types.KindNode:
+		keyPrefix = []string{nodesPrefix, req.Namespace}
+		unmarshalItemFunc = backendItemToServer(types.KindNode)
+	case types.KindKubeService:
+		keyPrefix = []string{kubeServicesPrefix}
+		unmarshalItemFunc = backendItemToServer(types.KindKubeService)
 	default:
 		return nil, "", trace.NotImplemented("%s not implemented at ListResources", req.ResourceType)
 	}
@@ -1505,23 +1511,29 @@ func (s *PresenceService) ListResources(ctx context.Context, req proto.ListResou
 	rangeStart := backend.Key(append(keyPrefix, req.StartKey)...)
 	rangeEnd := backend.RangeEnd(backend.Key(keyPrefix...))
 
-	result, err := s.GetRange(ctx, rangeStart, rangeEnd, limit)
+	var resources []types.Resource
+	err := backend.IterateRange(ctx, s.Backend, rangeStart, rangeEnd, limit, func(items []backend.Item) (stop bool, err error) {
+		for _, item := range items {
+			if len(resources) == limit {
+				break
+			}
+
+			resource, err := unmarshalItemFunc(item)
+			if err != nil {
+				return false, trace.Wrap(err)
+			}
+
+			if !resource.GetMetadata().MatchLabels(req.Labels) {
+				continue
+			}
+
+			resources = append(resources, resource)
+		}
+
+		return len(resources) == limit, nil
+	})
 	if err != nil {
 		return nil, "", trace.Wrap(err)
-	}
-
-	var resources []types.Resource
-	for _, item := range result.Items {
-		if len(resources) == limit {
-			break
-		}
-
-		resource, err := unmarshalItemFunc(item)
-		if err != nil {
-			return nil, "", trace.Wrap(err)
-		}
-
-		resources = append(resources, resource)
 	}
 
 	var nextKey string
@@ -1550,6 +1562,19 @@ func backendItemToApplicationServer(item backend.Item) (types.Resource, error) {
 		services.WithResourceID(item.ID),
 		services.WithExpires(item.Expires),
 	)
+}
+
+// backendItemToServer returns `backendItemToResourceFunc` to unmarshal a
+// `backend.Item` into a `types.ServerV2` with a specific `kind`, returning it
+// as a `types.Resource`.
+func backendItemToServer(kind string) backendItemToResourceFunc {
+	return func(item backend.Item) (types.Resource, error) {
+		return services.UnmarshalServer(
+			item.Value, kind,
+			services.WithResourceID(item.ID),
+			services.WithExpires(item.Expires),
+		)
+	}
 }
 
 const (
